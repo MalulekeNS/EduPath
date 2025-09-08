@@ -1,0 +1,865 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EduPath</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* Custom gradient text */
+        .gradient-text {
+            background-clip: text;
+            -webkit-background-clip: text;
+            color: transparent;
+        }
+        /* Hide file input */
+        .file-input {
+            display: none;
+        }
+        /* Spinner for generating quiz */
+        .spinner {
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+        /* Dropdown styles */
+        .dropdown:hover .dropdown-menu {
+            display: block;
+        }
+        .dropdown-menu {
+            display: none;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            background-color: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 0.5rem;
+            min-width: 200px;
+            z-index: 50;
+        }
+        .dropdown-menu-mobile {
+            display: none;
+        }
+        .dropdown-mobile.active .dropdown-menu-mobile {
+            display: block;
+        }
+    </style>
+</head>
+<body class="min-h-screen bg-slate-900">
+    <!-- Navigation -->
+    <nav id="navigation" class="bg-gradient-to-r from-blue-900 via-purple-900 to-indigo-900 shadow-2xl sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0 flex items-center">
+                        <i data-lucide="brain" class="h-8 w-8 text-cyan-400 mr-2"></i>
+                        <span class="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-purple-400 gradient-text">EduPath</span>
+                    </div>
+                </div>
+                <!-- Desktop Navigation -->
+                <div id="desktop-nav" class="hidden md:flex items-center space-x-1"></div>
+                <!-- Mobile Menu Button -->
+                <div class="md:hidden flex items-center">
+                    <button id="mobile-menu-btn" class="text-gray-300 hover:text-white p-2">
+                        <i data-lucide="menu" class="h-6 w-6"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        <!-- Mobile Navigation -->
+        <div id="mobile-nav" class="md:hidden hidden bg-black/50 backdrop-blur-lg border-t border-white/20">
+            <div class="px-2 pt-2 pb-3 space-y-1"></div>
+        </div>
+    </nav>
+
+    <!-- Page Content -->
+    <div id="page-content"></div>
+
+    <script>
+        // Initialize Lucide icons
+        lucide.createIcons();
+
+        // State management
+        let currentPage = 'home';
+        let isMobileMenuOpen = false;
+        let userType = ''; // 'highschool' | 'university'
+        let notesInput = '';
+        let isGenerating = false;
+        let currentQuiz = null;
+        let currentQuestionIndex = 0;
+        let score = 0;
+        let showResults = false;
+        let interests = '';
+        let careerSuggestions = null;
+        let openDropdown = null; // Track open dropdown in mobile view
+
+        // Navigation items
+        const navigationItems = [
+            { id: 'home', label: 'Home', icon: 'home' },
+            { id: 'about', label: 'About Us', icon: 'users' },
+            {
+                id: 'connect',
+                label: 'Connect',
+                icon: 'phone',
+                dropdown: [
+                    { id: 'contact', label: 'Contact Us', icon: 'phone' },
+                    { id: 'staff', label: 'Staff Directory', icon: 'users' },
+                ]
+            },
+            {
+                id: 'announcements',
+                label: 'Announcements',
+                icon: 'newspaper',
+                dropdown: [
+                    { id: 'news', label: 'News/Announcements', icon: 'newspaper' },
+                    { id: 'programs', label: 'Academic Programs', icon: 'book-open' },
+                    { id: 'calendar', label: 'Calendar & Events', icon: 'calendar' },
+                ]
+            },
+            { id: 'portal', label: 'Student Portal', icon: 'user' },
+            { id: 'gallery', label: 'Photo Gallery', icon: 'camera' },
+            { id: 'ai-tools', label: 'AI Tools', icon: 'brain' },
+        ];
+
+        // Navigation rendering
+        function renderNavigation() {
+            const desktopNav = document.getElementById('desktop-nav');
+            const mobileNav = document.getElementById('mobile-nav').querySelector('div');
+            desktopNav.innerHTML = '';
+            mobileNav.innerHTML = '';
+
+            navigationItems.forEach(item => {
+                if (item.dropdown) {
+                    // Desktop dropdown
+                    const desktopDropdown = document.createElement('div');
+                    desktopDropdown.className = 'relative dropdown';
+                    desktopDropdown.innerHTML = `
+                        <button class="flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-all duration-300 text-gray-300 hover:text-white hover:bg-white/10">
+                            <i data-lucide="${item.icon}" class="h-4 w-4 mr-1"></i>${item.label}
+                        </button>
+                        <div class="dropdown-menu">
+                            ${item.dropdown.map(subItem => `
+                                <button onclick="currentPage='${subItem.id}'; render();" class="flex items-center w-full px-3 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/10 rounded-lg ${currentPage === subItem.id ? 'bg-white/20 text-cyan-300' : ''}">
+                                    <i data-lucide="${subItem.icon}" class="h-4 w-4 mr-1"></i>${subItem.label}
+                                </button>
+                            `).join('')}
+                        </div>
+                    `;
+                    desktopNav.appendChild(desktopDropdown);
+
+                    // Mobile dropdown
+                    const mobileDropdown = document.createElement('div');
+                    mobileDropdown.className = `dropdown-mobile ${openDropdown === item.id ? 'active' : ''}`;
+                    mobileDropdown.innerHTML = `
+                        <button onclick="toggleDropdown('${item.id}');" class="flex items-center w-full px-3 py-2 rounded-lg text-sm font-medium text-gray-300 hover:text-white hover:bg-white/10">
+                            <i data-lucide="${item.icon}" class="h-4 w-4 mr-2"></i>${item.label}
+                        </button>
+                        <div class="dropdown-menu-mobile pl-4">
+                            ${item.dropdown.map(subItem => `
+                                <button onclick="currentPage='${subItem.id}'; isMobileMenuOpen=false; render();" class="flex items-center w-full px-3 py-2 rounded-lg text-sm font-medium ${currentPage === subItem.id ? 'bg-white/20 text-cyan-300' : 'text-gray-300 hover:text-white hover:bg-white/10'}">
+                                    <i data-lucide="${subItem.icon}" class="h-4 w-4 mr-2"></i>${subItem.label}
+                                </button>
+                            `).join('')}
+                        </div>
+                    `;
+                    mobileNav.appendChild(mobileDropdown);
+                } else {
+                    // Desktop nav item
+                    const desktopBtn = document.createElement('button');
+                    desktopBtn.className = `flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-all duration-300 ${currentPage === item.id ? 'bg-white/20 text-cyan-300 shadow-lg' : 'text-gray-300 hover:text-white hover:bg-white/10'}`;
+                    desktopBtn.innerHTML = `<i data-lucide="${item.icon}" class="h-4 w-4 mr-1"></i>${item.label}`;
+                    desktopBtn.onclick = () => {
+                        currentPage = item.id;
+                        render();
+                    };
+                    desktopNav.appendChild(desktopBtn);
+
+                    // Mobile nav item
+                    const mobileBtn = document.createElement('button');
+                    mobileBtn.className = `flex items-center w-full px-3 py-2 rounded-lg text-sm font-medium transition-all ${currentPage === item.id ? 'bg-white/20 text-cyan-300' : 'text-gray-300 hover:text-white hover:bg-white/10'}`;
+                    mobileBtn.innerHTML = `<i data-lucide="${item.icon}" class="h-4 w-4 mr-2"></i>${item.label}`;
+                    mobileBtn.onclick = () => {
+                        currentPage = item.id;
+                        isMobileMenuOpen = false;
+                        render();
+                    };
+                    mobileNav.appendChild(mobileBtn);
+                }
+            });
+
+            // Update mobile menu button
+            const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+            mobileMenuBtn.innerHTML = `<i data-lucide="${isMobileMenuOpen ? 'x' : 'menu'}" class="h-6 w-6"></i>`;
+            mobileMenuBtn.onclick = () => {
+                isMobileMenuOpen = !isMobileMenuOpen;
+                openDropdown = null; // Close dropdowns when toggling mobile menu
+                render();
+            };
+
+            // Show/hide mobile nav
+            document.getElementById('mobile-nav').className = `md:hidden ${isMobileMenuOpen ? 'block' : 'hidden'} bg-black/50 backdrop-blur-lg border-t border-white/20`;
+            lucide.createIcons();
+        }
+
+        // Toggle dropdown in mobile view
+        function toggleDropdown(id) {
+            openDropdown = openDropdown === id ? null : id;
+            render();
+        }
+
+        // Page rendering
+        function renderPageContent() {
+            const content = document.getElementById('page-content');
+            content.innerHTML = '';
+
+            switch (currentPage) {
+                case 'home':
+                    content.innerHTML = `
+                        <div class="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+                            <div class="relative overflow-hidden">
+                                <div class="absolute inset-0 bg-gradient-to-r from-cyan-500/20 to-purple-500/20"></div>
+                                <div class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24">
+                                    <div class="text-center">
+                                        <h1 class="text-5xl md:text-7xl font-bold bg-gradient-to-r from-cyan-400 via-purple-400 to-pink-400 gradient-text mb-6">Welcome to EduPath</h1>
+                                        <p class="text-xl md:text-2xl text-gray-300 mb-12 max-w-4xl mx-auto">Empowering students with AI-driven career exploration and intelligent study tools</p>
+                                        <div class="flex flex-col md:flex-row gap-6 justify-center items-center mb-16">
+                                            <button onclick="setUserType('highschool'); currentPage='ai-tools'; render();" class="bg-white/10 backdrop-blur-lg p-8 rounded-2xl border border-white/20 hover:bg-white/20 transition-all duration-300 group max-w-sm">
+                                                <div class="text-cyan-400 mb-4 group-hover:scale-110 transition-transform">
+                                                    <i data-lucide="target" class="h-12 w-12 mx-auto"></i>
+                                                </div>
+                                                <h3 class="text-xl font-bold text-white mb-2">High School Students</h3>
+                                                <p class="text-gray-300">AI-powered career exploration and guidance</p>
+                                            </button>
+                                            <button onclick="setUserType('university'); currentPage='ai-tools'; render();" class="bg-white/10 backdrop-blur-lg p-8 rounded-2xl border border-white/20 hover:bg-white/20 transition-all duration-300 group max-w-sm">
+                                                <div class="text-purple-400 mb-4 group-hover:scale-110 transition-transform">
+                                                    <i data-lucide="brain" class="h-12 w-12 mx-auto"></i>
+                                                </div>
+                                                <h3 class="text-xl font-bold text-white mb-2">University Students</h3>
+                                                <p class="text-gray-300">AI-generated quizzes from your study notes</p>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+                                <div class="grid md:grid-cols-3 gap-8">
+                                    <div class="bg-gradient-to-br from-cyan-500/20 to-blue-500/20 p-6 rounded-xl border border-cyan-500/30">
+                                        <i data-lucide="search" class="h-8 w-8 text-cyan-400 mb-4"></i>
+                                        <h3 class="text-xl font-bold text-white mb-2">Career Discovery</h3>
+                                        <p class="text-gray-300">Explore careers based on your interests and skills with AI recommendations</p>
+                                    </div>
+                                    <div class="bg-gradient-to-br from-purple-500/20 to-pink-500/20 p-6 rounded-xl border border-purple-500/30">
+                                        <i data-lucide="file-text" class="h-8 w-8 text-purple-400 mb-4"></i>
+                                        <h3 class="text-xl font-bold text-white mb-2">Smart Quizzes</h3>
+                                        <p class="text-gray-300">Upload notes and get AI-generated quizzes to test your knowledge</p>
+                                    </div>
+                                    <div class="bg-gradient-to-br from-green-500/20 to-emerald-500/20 p-6 rounded-xl border border-green-500/30">
+                                        <i data-lucide="trending-up" class="h-8 w-8 text-green-400 mb-4"></i>
+                                        <h3 class="text-xl font-bold text-white mb-2">Progress Tracking</h3>
+                                        <p class="text-gray-300">Monitor your learning journey and career exploration progress</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    break;
+                case 'ai-tools':
+                    if (userType === 'university') {
+                        content.innerHTML = `
+                            <div class="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-4">
+                                <div class="max-w-6xl mx-auto">
+                                    <div class="text-center mb-12 pt-8">
+                                        <h1 class="text-4xl md:text-6xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 gradient-text mb-4">AI Quiz Generator</h1>
+                                        <p class="text-xl text-gray-300">Upload or paste your study notes to generate custom quizzes</p>
+                                    </div>
+                                    ${!currentQuiz ? `
+                                        <div class="bg-white/10 backdrop-blur-lg rounded-2xl p-8 border border-white/20 mb-8">
+                                            <h2 class="text-2xl font-bold text-white mb-6">Upload Your Notes</h2>
+                                            <div class="mb-6">
+                                                <div class="flex gap-4 mb-4">
+                                                    <button onclick="document.getElementById('file-input').click();" class="flex items-center px-6 py-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white rounded-lg font-semibold transition-all">
+                                                        <i data-lucide="upload" class="h-5 w-5 mr-2"></i> Upload File
+                                                    </button>
+                                                    <input id="file-input" type="file" accept=".txt,.md" class="file-input" onchange="handleFileUpload(event)">
+                                                </div>
+                                                <div class="text-gray-400 text-center mb-4">OR</div>
+                                                <textarea id="notes-input" placeholder="Paste your study notes here..." class="w-full h-64 p-4 bg-black/30 border border-white/20 rounded-lg text-white placeholder-gray-400 resize-none focus:outline-none focus:border-purple-400" oninput="notesInput = this.value"></textarea>
+                                            </div>
+                                            <button id="generate-quiz-btn" onclick="generateQuiz();" class="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-lg font-bold text-lg transition-all flex items-center justify-center ${!notesInput.trim() || isGenerating ? 'opacity-50 cursor-not-allowed' : ''}">
+                                                ${isGenerating ? '<div class="spinner rounded-full h-5 w-5 border-b-2 border-white mr-2"></div> Generating Quiz...' : '<i data-lucide="brain" class="h-5 w-5 mr-2"></i> Generate AI Quiz'}
+                                            </button>
+                                        </div>
+                                    ` : `
+                                        <div class="bg-white/10 backdrop-blur-lg rounded-2xl p-8 border border-white/20">
+                                            ${!showResults ? `
+                                                <div>
+                                                    <div class="flex justify-between items-center mb-6">
+                                                        <h2 class="text-2xl font-bold text-white">${currentQuiz.title}</h2>
+                                                        <span class="text-purple-400 font-semibold">Question ${currentQuestionIndex + 1} of ${currentQuiz.questions.length}</span>
+                                                    </div>
+                                                    <div class="mb-8">
+                                                        <h3 class="text-xl text-white mb-6">${currentQuiz.questions[currentQuestionIndex].question}</h3>
+                                                        <div class="space-y-3">
+                                                            ${currentQuiz.questions[currentQuestionIndex].options.map((option, index) => `
+                                                                <button onclick="handleQuizAnswer(${index});" class="w-full p-4 text-left bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg text-white transition-all">
+                                                                    ${String.fromCharCode(65 + index)}. ${option}
+                                                                </button>
+                                                            `).join('')}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ` : `
+                                                <div class="text-center">
+                                                    <i data-lucide="award" class="h-16 w-16 text-yellow-400 mx-auto mb-4"></i>
+                                                    <h2 class="text-3xl font-bold text-white mb-4">Quiz Complete!</h2>
+                                                    <p class="text-2xl text-purple-400 mb-6">Your Score: ${score}/${currentQuiz.questions.length}</p>
+                                                    <div class="flex gap-4 justify-center">
+                                                        <button onclick="currentQuiz = null; render();" class="px-6 py-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white rounded-lg font-semibold transition-all">Generate New Quiz</button>
+                                                        <button class="px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white rounded-lg font-semibold transition-all flex items-center">
+                                                            <i data-lucide="download" class="h-5 w-5 mr-2"></i> Download Results
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            `}
+                                        </div>
+                                    `}
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        content.innerHTML = `
+                            <div class="min-h-screen bg-gradient-to-br from-slate-900 via-cyan-900 to-slate-900 p-4">
+                                <div class="max-w-6xl mx-auto">
+                                    <div class="text-center mb-12 pt-8">
+                                        <h1 class="text-4xl md:text-6xl font-bold bg-gradient-to-r from-cyan-400 to-blue-400 gradient-text mb-4">AI Career Explorer</h1>
+                                        <p class="text-xl text-gray-300">Discover your ideal career path with AI-powered recommendations</p>
+                                    </div>
+                                    ${!careerSuggestions ? `
+                                        <div class="bg-white/10 backdrop-blur-lg rounded-2xl p-8 border border-white/20 mb-8">
+                                            <h2 class="text-2xl font-bold text-white mb-6">Tell us about your interests</h2>
+                                            <textarea id="interests-input" placeholder="Describe your interests, skills, and what you enjoy doing..." class="w-full h-40 p-4 bg-black/30 border border-white/20 rounded-lg text-white placeholder-gray-400 resize-none focus:outline-none focus:border-cyan-400 mb-6" oninput="interests = this.value"></textarea>
+                                            <button onclick="exploreCareer();" class="w-full py-4 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white rounded-lg font-bold text-lg transition-all flex items-center justify-center ${!interests.trim() ? 'opacity-50 cursor-not-allowed' : ''}">
+                                                <i data-lucide="search" class="h-5 w-5 mr-2"></i> Explore Career Paths
+                                            </button>
+                                        </div>
+                                    ` : `
+                                        <div>
+                                            <div class="flex justify-between items-center mb-8">
+                                                <h2 class="text-2xl font-bold text-white">Your Career Matches</h2>
+                                                <button onclick="careerSuggestions = null; render();" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg transition-all">New Search</button>
+                                            </div>
+                                            <div class="grid gap-6">
+                                                ${careerSuggestions.map((career, index) => `
+                                                    <div class="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
+                                                        <div class="flex justify-between items-start mb-4">
+                                                            <h3 class="text-xl font-bold text-white">${career.title}</h3>
+                                                            <span class="bg-green-500/20 text-green-400 px-3 py-1 rounded-full font-semibold">${career.match} Match</span>
+                                                        </div>
+                                                        <p class="text-gray-300 mb-4">${career.description}</p>
+                                                        <div class="grid md:grid-cols-3 gap-4 text-sm">
+                                                            <div>
+                                                                <span class="text-cyan-400 font-semibold">Key Skills:</span>
+                                                                <p class="text-gray-300">${career.skills.join(', ')}</p>
+                                                            </div>
+                                                            <div>
+                                                                <span class="text-cyan-400 font-semibold">Salary Range:</span>
+                                                                <p class="text-gray-300">${career.salary}</p>
+                                                            </div>
+                                                            <div>
+                                                                <span class="text-cyan-400 font-semibold">Job Growth:</span>
+                                                                <p class="text-gray-300">${career.growth}</p>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                `).join('')}
+                                            </div>
+                                        </div>
+                                    `}
+                                </div>
+                            </div>
+                        `;
+                    }
+                    break;
+                case 'calendar':
+                    content.innerHTML = `
+                        <div class="min-h-screen bg-gradient-to-br from-slate-900 via-orange-900 to-slate-900 p-4">
+                            <div class="max-w-6xl mx-auto pt-8">
+                                <h1 class="text-4xl md:text-5xl font-bold bg-gradient-to-r from-orange-400 to-red-400 gradient-text mb-12 text-center">Calendar & Events</h1>
+                                <div class="grid md:grid-cols-2 gap-8">
+                                    <div class="bg-white/10 backdrop-blur-lg rounded-2xl p-8 border border-white/20">
+                                        <h2 class="text-2xl font-bold text-white mb-6">Upcoming Events</h2>
+                                        <div class="space-y-4">
+                                            ${[
+                                                { date: 'Sep 10', title: 'AI Career Fair', time: '10:00 AM - 4:00 PM' },
+                                                { date: 'Sep 15', title: 'Study Skills Workshop', time: '2:00 PM - 4:00 PM' },
+                                                { date: 'Sep 20', title: 'University Info Session', time: '6:00 PM - 8:00 PM' },
+                                                { date: 'Sep 25', title: 'Quiz Generation Demo', time: '1:00 PM - 2:30 PM' },
+                                                { date: 'Oct 1', title: 'Career Counseling Day', time: '9:00 AM - 5:00 PM' },
+                                            ].map((event, i) => `
+                                                <div class="flex items-center p-4 bg-white/5 rounded-lg border border-white/10">
+                                                    <div class="bg-orange-500/20 text-orange-400 px-3 py-2 rounded-lg font-bold mr-4 min-w-fit">${event.date}</div>
+                                                    <div class="flex-1">
+                                                        <h3 class="text-white font-semibold">${event.title}</h3>
+                                                        <p class="text-gray-400 text-sm">${event.time}</p>
+                                                    </div>
+                                                    <i data-lucide="calendar" class="h-5 w-5 text-gray-400"></i>
+                                                </div>
+                                            `).join('')}
+                                        </div>
+                                    </div>
+                                    <div class="bg-white/10 backdrop-blur-lg rounded-2xl p-8 border border-white/20">
+                                        <h2 class="text-2xl font-bold text-white mb-6">Academic Calendar</h2>
+                                        <div class="space-y-6">
+                                            <div>
+                                                <h3 class="text-lg font-semibold text-orange-400 mb-2">Fall Semester 2025</h3>
+                                                <ul class="text-gray-300 space-y-1">
+                                                    <li>• Classes Begin: September 1</li>
+                                                    <li>• Midterm Exams: October 15-19</li>
+                                                    <li>• Thanksgiving Break: November 25-29</li>
+                                                    <li>• Final Exams: December 10-14</li>
+                                                </ul>
+                                            </div>
+                                            <div>
+                                                <h3 class="text-lg font-semibold text-orange-400 mb-2">Spring Semester 2026</h3>
+                                                <ul class="text-gray-300 space-y-1">
+                                                    <li>• Classes Begin: January 15</li>
+                                                    <li>• Spring Break: March 9-13</li>
+                                                    <li>• Midterm Exams: March 23-27</li>
+                                                    <li>• Final Exams: May 4-8</li>
+                                                </ul>
+                                            </div>
+                                            <div>
+                                                <h3 class="text-lg font-semibold text-orange-400 mb-2">Important Deadlines</h3>
+                                                <ul class="text-gray-300 space-y-1">
+                                                    <li>• Registration Opens: November 1</li>
+                                                    <li>• Scholarship Applications: December 15</li>
+                                                    <li>• Career Fair Registration: January 30</li>
+                                                </ul>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    break;
+                case 'news':
+                    content.innerHTML = `
+                        <div class="min-h-screen bg-gradient-to-br from-slate-900 via-red-900 to-slate-900 p-4">
+                            <div class="max-w-6xl mx-auto pt-8">
+                                <h1 class="text-4xl md:text-5xl font-bold bg-gradient-to-r from-red-400 to-pink-400 gradient-text mb-12 text-center">News & Announcements</h1>
+                                <div class="grid gap-8">
+                                    ${[
+                                        {
+                                            title: 'New AI Quiz Generator Feature Launched',
+                                            date: 'September 3, 2025',
+                                            excerpt: 'Students can now upload their study notes and generate personalized quizzes using our advanced AI technology.',
+                                            category: 'Technology',
+                                        },
+                                        {
+                                            title: 'Career Exploration Program Expansion',
+                                            date: 'August 28, 2025',
+                                            excerpt: "We're expanding our AI-powered career exploration to include more industry partnerships and internship opportunities.",
+                                            category: 'Programs',
+                                        },
+                                        {
+                                            title: 'Fall Semester Registration Now Open',
+                                            date: 'August 25, 2025',
+                                            excerpt: 'Students can now register for fall semester courses and career counseling sessions through our new portal.',
+                                            category: 'Admissions',
+                                        },
+                                        {
+                                            title: 'AI Literacy Certification Program Available',
+                                            date: 'August 20, 2025',
+                                            excerpt: 'New certification program helps students develop essential AI and digital literacy skills for the future job market.',
+                                            category: 'Education',
+                                        },
+                                    ].map((news, i) => `
+                                        <div class="bg-white/10 backdrop-blur-lg rounded-2xl p-8 border border-white/20 hover:bg-white/20 transition-all">
+                                            <div class="flex justify-between items-start mb-4">
+                                                <span class="bg-red-500/20 text-red-400 px-3 py-1 rounded-full text-sm font-semibold">${news.category}</span>
+                                                <span class="text-gray-400 text-sm">${news.date}</span>
+                                            </div>
+                                            <h2 class="text-2xl font-bold text-white mb-3">${news.title}</h2>
+                                            <p class="text-gray-300 leading-relaxed">${news.excerpt}</p>
+                                            <button class="mt-4 text-red-400 hover:text-red-300 font-semibold transition-colors">Read More →</button>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    break;
+                case 'contact':
+                    content.innerHTML = `
+                        <div class="min-h-screen bg-gradient-to-br from-slate-900 via-teal-900 to-slate-900 p-4">
+                            <div class="max-w-4xl mx-auto pt-8">
+                                <h1 class="text-4xl md:text-5xl font-bold bg-gradient-to-r from-teal-400 to-cyan-400 gradient-text mb-12 text-center">Contact Us</h1>
+                                <div class="grid md:grid-cols-2 gap-8">
+                                    <div class="bg-white/10 backdrop-blur-lg rounded-2xl p-8 border border-white/20">
+                                        <h2 class="text-2xl font-bold text-white mb-6">Get in Touch</h2>
+                                        <div class="space-y-4">
+                                            <div class="flex items-center">
+                                                <i data-lucide="phone" class="h-5 w-5 text-teal-400 mr-3"></i>
+                                                <span class="text-gray-300">(555) 123-4567</span>
+                                            </div>
+                                            <div class="flex items-center">
+                                                <i data-lucide="newspaper" class="h-5 w-5 text-teal-400 mr-3"></i>
+                                                <span class="text-gray-300">info@edupath.edu</span>
+                                            </div>
+                                            <div class="flex items-center">
+                                                <i data-lucide="home" class="h-5 w-5 text-teal-400 mr-3"></i>
+                                                <span class="text-gray-300">123 Education Street, Learning City, LC 12345</span>
+                                            </div>
+                                        </div>
+                                        <div class="mt-8">
+                                            <h3 class="text-lg font-semibold text-white mb-4">Office Hours</h3>
+                                            <div class="text-gray-300 space-y-2">
+                                                <p>Monday - Friday: 8:00 AM - 6:00 PM</p>
+                                                <p>Saturday: 9:00 AM - 4:00 PM</p>
+                                                <p>Sunday: Closed</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="bg-white/10 backdrop-blur-lg rounded-2xl p-8 border border-white/20">
+                                        <h2 class="text-2xl font-bold text-white mb-6">Send us a Message</h2>
+                                        <div class="space-y-4">
+                                            <input type="text" placeholder="Your Name" class="w-full p-3 bg-black/30 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-teal-400">
+                                            <input type="email" placeholder="Your Email" class="w-full p-3 bg-black/30 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-teal-400">
+                                            <select class="w-full p-3 bg-black/30 border border-white/20 rounded-lg text-white focus:outline-none focus:border-teal-400">
+                                                <option value="">Select Topic</option>
+                                                <option value="career">Career Exploration</option>
+                                                <option value="quiz">AI Quiz Generator</option>
+                                                <option value="support">Technical Support</option>
+                                                <option value="other">Other</option>
+                                            </select>
+                                            <textarea placeholder="Your Message" rows="4" class="w-full p-3 bg-black/30 border border-white/20 rounded-lg text-white placeholder-gray-400 resize-none focus:outline-none focus:border-teal-400"></textarea>
+                                            <button class="w-full py-3 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-700 hover:to-cyan-700 text-white rounded-lg font-semibold transition-all">Send Message</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    break;
+                case 'portal':
+                    content.innerHTML = `
+                        <div class="min-h-screen bg-gradient-to-br from-slate-900 via-violet-900 to-slate-900 p-4">
+                            <div class="max-w-6xl mx-auto pt-8">
+                                <h1 class="text-4xl md:text-5xl font-bold bg-gradient-to-r from-violet-400 to-purple-400 gradient-text mb-12 text-center">Student Portal</h1>
+                                <div class="grid md:grid-cols-3 gap-8">
+                                    ${[
+                                        { icon: 'book-open', title: 'Grades', text: 'View your current grades and academic progress', color: 'text-violet-400' },
+                                        { icon: 'check-circle', title: 'Attendance', text: 'Track your attendance and participation', color: 'text-violet-400' },
+                                        { icon: 'calendar', title: 'Schedule', text: 'View your class schedule and assignments', color: 'text-violet-400' },
+                                        { icon: 'file-text', title: 'Assignments', text: 'Submit and track your assignments', color: 'text-violet-400' },
+                                        { icon: 'user', title: 'Profile', text: 'Update your personal information', color: 'text-violet-400' },
+                                        { icon: 'brain', title: 'AI Tools', text: 'Access career explorer and quiz generator', color: 'text-violet-400' },
+                                    ].map(item => `
+                                        <div class="bg-white/10 backdrop-blur-lg rounded-2xl p-8 border border-white/20 text-center hover:bg-white/20 transition-all cursor-pointer">
+                                            <i data-lucide="${item.icon}" class="h-12 w-12 ${item.color} mx-auto mb-4"></i>
+                                            <h2 class="text-xl font-bold text-white mb-2">${item.title}</h2>
+                                            <p class="text-gray-300">${item.text}</p>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                                <div class="mt-12 bg-white/10 backdrop-blur-lg rounded-2xl p-8 border border-white/20">
+                                    <h2 class="text-2xl font-bold text-white mb-6">Quick Stats</h2>
+                                    <div class="grid md:grid-cols-4 gap-6">
+                                        ${[
+                                            { value: '85%', label: 'Overall Grade', color: 'text-violet-400' },
+                                            { value: '94%', label: 'Attendance', color: 'text-green-400' },
+                                            { value: '12', label: 'Completed Quizzes', color: 'text-blue-400' },
+                                            { value: '5', label: 'Career Matches', color: 'text-yellow-400' },
+                                        ].map(stat => `
+                                            <div class="text-center">
+                                                <div class="text-3xl font-bold ${stat.color} mb-2">${stat.value}</div>
+                                                <div class="text-gray-300">${stat.label}</div>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    break;
+                case 'gallery':
+                    content.innerHTML = `
+                        <div class="min-h-screen bg-gradient-to-br from-slate-900 via-pink-900 to-slate-900 p-4">
+                            <div class="max-w-6xl mx-auto pt-8">
+                                <h1 class="text-4xl md:text-5xl font-bold bg-gradient-to-r from-pink-400 to-rose-400 gradient-text mb-12 text-center">Photo Gallery</h1>
+                                <div class="grid md:grid-cols-3 gap-6">
+                                    ${Array.from({ length: 9 }, (_, index) => `
+                                        <div class="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20 hover:bg-white/20 transition-all cursor-pointer">
+                                            <div class="aspect-video bg-gradient-to-br from-pink-500/20 to-rose-500/20 rounded-lg flex items-center justify-center mb-4">
+                                                <i data-lucide="camera" class="h-12 w-12 text-pink-400"></i>
+                                            </div>
+                                            <h3 class="text-lg font-semibold text-white mb-2">${
+                                                ['Campus Life', 'AI Lab', 'Career Fair', 'Study Groups', 'Graduation', 'Workshops', 'Events', 'Students', 'Facilities'][index]
+                                            }</h3>
+                                            <p class="text-gray-400 text-sm">${
+                                                [
+                                                    'Students enjoying campus activities',
+                                                    'State-of-the-art AI learning facilities',
+                                                    'Annual career exploration fair',
+                                                    'Collaborative learning sessions',
+                                                    'Celebrating student achievements',
+                                                    'Hands-on learning workshops',
+                                                    'Special campus events',
+                                                    'Our amazing student community',
+                                                    'Modern learning spaces',
+                                                ][index]
+                                            }</p>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    break;
+                case 'about':
+                    content.innerHTML = `
+                        <div class="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 p-4">
+                            <div class="max-w-4xl mx-auto pt-8">
+                                <h1 class="text-4xl md:text-5xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 gradient-text mb-8 text-center">About EduPath</h1>
+                                <div class="bg-white/10 backdrop-blur-lg rounded-2xl p-8 border border-white/20 mb-8">
+                                    <h2 class="text-2xl font-bold text-white mb-4">Our Mission</h2>
+                                    <p class="text-gray-300 text-lg leading-relaxed mb-6">
+                                        At EduPath, we're revolutionizing education through the power of artificial intelligence. We believe every student deserves personalized guidance and innovative tools to excel in their academic journey.
+                                    </p>
+                                    <div class="grid md:grid-cols-2 gap-8">
+                                        <div>
+                                            <h3 class="text-xl font-semibold text-cyan-400 mb-3">For High School Students</h3>
+                                            <p class="text-gray-300">Our AI-powered career exploration helps students discover their passion and find the perfect career path based on their interests, skills, and goals.</p>
+                                        </div>
+                                        <div>
+                                            <h3 class="text-xl font-semibold text-purple-400 mb-3">For University Students</h3>
+                                            <p class="text-gray-300">Transform your study notes into interactive quizzes with our intelligent quiz generator, making learning more engaging and effective.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="bg-white/10 backdrop-blur-lg rounded-2xl p-8 border border-white/20">
+                                    <h2 class="text-2xl font-bold text-white mb-4">Our History</h2>
+                                    <p class="text-gray-300 leading-relaxed">
+                                        Founded with the vision of making quality education accessible to all, EduPath combines cutting-edge AI technology with proven educational methodologies. Our platform has helped thousands of students achieve their academic and career goals.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    break;
+                case 'staff':
+                    content.innerHTML = `
+                        <div class="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-900 to-slate-900 p-4">
+                            <div class="max-w-6xl mx-auto pt-8">
+                                <h1 class="text-4xl md:text-5xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 gradient-text mb-12 text-center">Our Team</h1>
+                                <div class="grid md:grid-cols-3 gap-8">
+                                    ${[
+                                        { name: 'Dr. Sarah Johnson', role: 'Principal & AI Director', email: 'sarah.johnson@edupath.edu' },
+                                        { name: 'Prof. Michael Chen', role: 'Career Counseling Lead', email: 'michael.chen@edupath.edu' },
+                                        { name: 'Dr. Emily Rodriguez', role: 'Educational Technology Specialist', email: 'emily.rodriguez@edupath.edu' },
+                                        { name: 'James Wilson', role: 'AI Developer', email: 'james.wilson@edupath.edu' },
+                                        { name: 'Lisa Thompson', role: 'Student Success Coordinator', email: 'lisa.thompson@edupath.edu' },
+                                        { name: 'Dr. Robert Kim', role: 'Assessment Specialist', email: 'robert.kim@edupath.edu' },
+                                    ].map((staff, i) => `
+                                        <div class="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20 text-center hover:bg-white/20 transition-all">
+                                            <div class="w-20 h-20 bg-gradient-to-br from-indigo-400 to-purple-400 rounded-full mx-auto mb-4 flex items-center justify-center">
+                                                <i data-lucide="user" class="h-10 w-10 text-white"></i>
+                                            </div>
+                                            <h3 class="text-xl font-bold text-white mb-2">${staff.name}</h3>
+                                            <p class="text-indigo-400 mb-2">${staff.role}</p>
+                                            <p class="text-gray-300 text-sm">${staff.email}</p>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    break;
+                case 'programs':
+                    content.innerHTML = `
+                        <div class="min-h-screen bg-gradient-to-br from-slate-900 via-green-900 to-slate-900 p-4">
+                            <div class="max-w-6xl mx-auto pt-8">
+                                <h1 class="text-4xl md:text-5xl font-bold bg-gradient-to-r from-green-400 to-blue-400 gradient-text mb-12 text-center">Academic Programs</h1>
+                                <div class="grid md:grid-cols-2 gap-8">
+                                    ${[
+                                        {
+                                            icon: 'target',
+                                            iconColor: 'text-green-400',
+                                            title: 'Career Exploration Program',
+                                            bullets: [
+                                                'Interest and skills assessment',
+                                                'Career matching algorithms',
+                                                'College program recommendations',
+                                                'Industry insights and trends',
+                                            ],
+                                            description: 'Comprehensive career guidance using AI-powered assessments and personalized recommendations.',
+                                        },
+                                        {
+                                            icon: 'brain',
+                                            iconColor: 'text-blue-400',
+                                            title: 'AI Study Assistant',
+                                            bullets: [
+                                                'AI-generated quizzes from notes',
+                                                'Personalized study schedules',
+                                                'Progress tracking and analytics',
+                                                'Collaborative learning features',
+                                            ],
+                                            description: 'Advanced learning tools that adapt to your study habits and generate personalized content.',
+                                        },
+                                        {
+                                            icon: 'book-open',
+                                            iconColor: 'text-purple-400',
+                                            title: 'Digital Literacy',
+                                            bullets: [
+                                                'AI and machine learning basics',
+                                                'Digital citizenship and ethics',
+                                                'Data analysis and visualization',
+                                                'Programming fundamentals',
+                                            ],
+                                            description: 'Essential digital skills for the modern world, including AI literacy and technology integration.',
+                                        },
+                                        {
+                                            icon: 'award',
+                                            iconColor: 'text-yellow-400',
+                                            title: 'Certification Programs',
+                                            bullets: [
+                                                'Career readiness certification',
+                                                'Digital skills validation',
+                                                'AI literacy certification',
+                                                'Study skills mastery',
+                                            ],
+                                            description: 'Industry-recognized certifications to boost your career prospects and validate your skills.',
+                                        },
+                                    ].map(item => `
+                                        <div class="bg-white/10 backdrop-blur-lg rounded-2xl p-8 border border-white/20">
+                                            <i data-lucide="${item.icon}" class="h-12 w-12 ${item.iconColor} mb-4"></i>
+                                            <h2 class="text-2xl font-bold text-white mb-4">${item.title}</h2>
+                                            <p class="text-gray-300 mb-4">${item.description}</p>
+                                            <ul class="text-gray-300 space-y-2">
+                                                ${item.bullets.map(b => `<li>• ${b}</li>`).join('')}
+                                            </ul>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    break;
+            }
+            lucide.createIcons();
+        }
+
+        // File upload handler
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                notesInput = ev.target.result || '';
+                document.getElementById('notes-input').value = notesInput;
+                render();
+            };
+            reader.readAsText(file);
+        }
+
+        // Quiz generation
+        function generateQuiz() {
+            if (!notesInput.trim()) return;
+            isGenerating = true;
+            render();
+            setTimeout(() => {
+                currentQuiz = {
+                    title: 'AI Generated Quiz',
+                    questions: [
+                        {
+                            question: 'Based on your notes, what is the main concept discussed?',
+                            options: ['Option A', 'Option B', 'Option C', 'Option D'],
+                            correctAnswer: 0,
+                        },
+                        {
+                            question: 'Which of the following is a key principle mentioned?',
+                            options: ['Principle X', 'Principle Y', 'Principle Z', 'None of the above'],
+                            correctAnswer: 1,
+                        },
+                        {
+                            question: 'What conclusion can be drawn from the material?',
+                            options: ['Conclusion A', 'Conclusion B', 'Conclusion C', 'All of the above'],
+                            correctAnswer: 2,
+                        },
+                    ],
+                };
+                currentQuestionIndex = 0;
+                score = 0;
+                showResults = false;
+                isGenerating = false;
+                render();
+            }, 1000);
+        }
+
+        // Quiz answer handler
+        function handleQuizAnswer(index) {
+            if (index === currentQuiz.questions[currentQuestionIndex].correctAnswer) {
+                score++;
+            }
+            if (currentQuestionIndex < currentQuiz.questions.length - 1) {
+                currentQuestionIndex++;
+            } else {
+                showResults = true;
+            }
+            render();
+        }
+
+        // Career exploration
+        function exploreCareer() {
+            if (!interests.trim()) return;
+            careerSuggestions = [
+                {
+                    title: 'Software Developer',
+                    match: '95%',
+                    description: 'Create applications and systems using programming languages.',
+                    skills: ['Programming', 'Problem Solving', 'Logic'],
+                    salary: '$70,000 - $120,000',
+                    growth: 'High',
+                },
+                {
+                    title: 'Data Scientist',
+                    match: '87%',
+                    description: 'Analyze complex data to help organizations make decisions.',
+                    skills: ['Statistics', 'Python', 'Machine Learning'],
+                    salary: '$80,000 - $140,000',
+                    growth: 'Very High',
+                },
+                {
+                    title: 'UX Designer',
+                    match: '78%',
+                    description: 'Design user experiences for digital products.',
+                    skills: ['Design', 'User Research', 'Prototyping'],
+                    salary: '$60,000 - $100,000',
+                    growth: 'High',
+                },
+            ];
+            render();
+        }
+
+        // Set user type
+        function setUserType(type) {
+            userType = type;
+        }
+
+        // Main render function
+        function render() {
+            renderNavigation();
+            renderPageContent();
+        }
+
+        // Initial render
+        render();
+    </script>
+</body>
+</html>
